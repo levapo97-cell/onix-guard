@@ -2,7 +2,28 @@
 
 Servicio de **seguridad + análisis** de OnixGuard. Escrito en **Rust**. Es el único servicio que ve el valor crudo de las credenciales, y lo **destruye**: redacta secretos (SHA-256), marca repeticiones e ineficiencias, y genera el post-mortem al cerrar etapas.
 
-> **Estado:** se construye en **Fase 2**. Este README documenta su diseño.
+> **Estado (Fase 2 ✅):** implementado en Rust (async-nats + tokio). Consume `onix.norm.*`, **redacta credenciales** (SHA-256, fail-closed), **detecta** error (`exit_code!=0`) y repetición (`tool`+`params_hash` ≥3 en ventana 4 min), y publica `onix.clean.*` sin el valor real. Expone `/healthz`. Con tests unitarios de redacción y detección.
+
+## Estructura
+```text
+src/main.rs     # loop async-nats JetStream (norm→clean) + servidor de salud
+src/types.rs    # NormEvent (entra) / CleanEvent (sale) / Credential
+src/redact.rs   # redacción por nombre de campo y por patrón + params_hash (con tests)
+src/detect.rs   # is_error + RepetitionDetector con ventana (con tests)
+Dockerfile      # multi-stage (rust:1-bookworm → distroless/cc)
+```
+
+## Correr y probar
+```bash
+cargo test                 # tests de redacción (nunca filtra el valor) y detección
+cargo run                  # NATS_URL=nats://localhost:4222 por defecto
+```
+En el conjunto: `make e2e` desde onix-deploy lo levanta junto al pipeline.
+
+## Reglas de redacción (resumen)
+- **Por nombre de campo (fail-closed):** `password`, `token`, `secret`, `api_key`, `dsn`, … → redacta el valor completo.
+- **Por patrón de valor:** cadenas de conexión con usuario:clave@host, API keys (`sk-`, `sk-ant-`, `AKIA…`, `ghp_…`, `AIza…`, `xox…`), JWT, y asignaciones `VAR_SECRET=valor` en contenido `.env`.
+- Reemplaza el valor por `[credencial · sha256:…]` y guarda **solo** el hash + tipo. El valor real nunca sale del proceso.
 
 ---
 
